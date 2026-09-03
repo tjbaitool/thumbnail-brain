@@ -6,7 +6,7 @@ from google import genai
 # ==========================================
 # 0. 비밀번호 인증 게이트 (기본 비밀번호: tjb)
 # ==========================================
-DEFAULT_PASSWORD = "tjb"  # 원하는 접속 비밀번호로 변경 가능합니다.
+DEFAULT_PASSWORD = "tjb"
 
 def check_password():
     if "authenticated" not in st.session_state:
@@ -31,13 +31,13 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 1. 메인 화면 구성 (API 관련 UI 완전 제거)
+# 1. 메인 화면 구성
 # ==========================================
 st.set_page_config(page_title="유튜브 썸네일 브레인", layout="wide")
 st.title("🎯 유튜브 썸네일 2줄 카피 & 비주얼 생성기")
 st.caption("EBS 다큐 & 포크포크 알고리즘 후킹 엔진")
 
-# API Key는 서버 백엔드(Secrets)에서만 은밀하게 로드
+# Secrets에서만 API Key 로드 (화면 노출 X)
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 video_url = st.text_input("유튜브 영상 URL을 입력하세요:", placeholder="https://www.youtube.com/watch?v=...")
@@ -53,13 +53,12 @@ def extract_info(url):
         return info.get('title', ''), info.get('description', '')
 
 # ==========================================
-# 2. 분석 및 결과 생성 실행
+# 2. 분석 및 결과 생성 실행 (503 방어 로직 내장)
 # ==========================================
 if st.button("🚀 후킹 문구 및 비주얼 도출", type="primary"):
     if not video_url:
         st.warning("유튜브 영상 URL을 입력해 주세요.")
     elif not api_key:
-        # 일반 사용자에게 API 키를 요구하지 않고 시스템 상태만 알림
         st.error("시스템 설정 오류가 발생했습니다. 서비스 관리자에게 문의하세요.")
     else:
         with st.spinner("영상 분석 및 최적의 후킹 카피를 생성하는 중입니다..."):
@@ -122,14 +121,36 @@ if st.button("🚀 후킹 문구 및 비주얼 도출", type="primary"):
                 """
                 
                 client = genai.Client(api_key=api_key)
-                response = client.models.generate_content(
-                    model='gemini-3.6-flash',
-                    contents=system_prompt,
-                    config={'response_mime_type': 'application/json'}
-                )
-                data = json.loads(response.text)
                 
-                # 결과 출력
+                # 503 오류 방지를 위한 대체 모델 리스트
+                candidate_models = [
+                    'gemini-2.0-flash',
+                    'gemini-2.0-flash-lite',
+                    'gemini-3.6-flash',
+                    'gemini-1.5-flash'
+                ]
+                
+                data = None
+                last_error = None
+                
+                for model_name in candidate_models:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=system_prompt,
+                            config={'response_mime_type': 'application/json'}
+                        )
+                        if response and response.text:
+                            data = json.loads(response.text)
+                            break
+                    except Exception as e:
+                        last_error = e
+                        continue
+                
+                if not data:
+                    raise last_error
+                
+                # 결과 렌더링
                 st.subheader("💡 핵심 훅(Hook) 분석")
                 st.info(data.get("hook_summary", ""))
                 
